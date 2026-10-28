@@ -1,0 +1,123 @@
+name: p40-cuda12
+
+# Builds the DeepSeek-V4.1 engine (strata-dsv41) for Tesla P40 / Pascal sm_61 on CUDA 12.9, packages it the way the
+# released DeepSeek engine packages are made (RUNPATH $ORIGIN, bundled cudart/cublas/cublasLt,
+# engine-component.json, tar.gz + .entry.json) and verifies the result.
+#
+# Hosted runners have no GPU: this validates the build and the package, not inference on a P40.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/p40-cuda12.yml'
+      - 'src/dsv41/**'
+      - 'src/prefill/**'
+      - 'include/**'
+      - 'CMakeLists.txt'
+      - 'packaging/**'
+  pull_request:
+    paths:
+      - '.github/workflows/p40-cuda12.yml'
+      - 'src/dsv41/**'
+      - 'CMakeLists.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p40-cuda12-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Ubuntu 22.04: glibc 2.35, the same portability floor as the released CUDA 12 engine packages.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    env:
+      CUDA_HOME: /usr/local/cuda-12.9
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build build-essential python3 python3-pip unzip
+          # Ubuntu 22.04 ships CMake 3.22; Strata needs 3.24+
+          python3 -m pip install --user "cmake>=3.31,<3.32"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install CUDA 12.9 toolkit
+        run: |
+          curl -fsSL -o /tmp/cuda-keyring.deb \
+            https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i /tmp/cuda-keyring.deb
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cuda-nvcc-12-9 cuda-cudart-dev-12-9 libcublas-dev-12-9 cuda-cccl-12-9
+          "$CUDA_HOME/bin/nvcc" --version
+
+      - name: Fetch the pinned llama.cpp
+        run: |
+          set -eux
+          sha=$(grep -m1 '^LLAMA_CPP_COMMIT' setup.py | sed -E 's/.*"([0-9a-f]+)".*/\1/')
+          echo "llama.cpp $sha"
+          curl -fsSL -o /tmp/llama.zip "https://github.com/ggml-org/llama.cpp/archive/$sha.zip"
+          unzip -q /tmp/llama.zip -d third_party
+          mv "third_party/llama.cpp-$sha" third_party/llama.cpp
+
+      - name: Configure (sm_61, CUDA 12.9)
+        run: |
+          cmake -G Ninja -S . -B build-p40 -DCMAKE_BUILD_TYPE=Release \
+            -DSTRATA_ENABLE_CUDA=ON -DSTRATA_BUILD_TESTS=OFF -DSTRATA_BUILD_DSV41=ON \
+            -DSTRATA_NATIVE_EXPERTS=ON -DSTRATA_PORTABLE=ON -DSTRATA_EXPERIMENTAL_SM60=ON \
+            "-DCMAKE_CUDA_ARCHITECTURES=61-real;61-virtual" \
+            -DCMAKE_CUDA_COMPILER="$CUDA_HOME/bin/nvcc" -DCUDAToolkit_ROOT="$CUDA_HOME" \
+            -DSTRATA_GGML_DIR="$PWD/third_party/llama.cpp" \
+            -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON -DCMAKE_SKIP_BUILD_RPATH=OFF \
+            '-DCMAKE_INSTALL_RPATH=$ORIGIN'
+
+      - name: Build strata-dsv41
+        run: cmake --build build-p40 --target strata-dsv41 -j "$(nproc)"
+
+      - name: Stage and package
+        run: |
+          set -eux
+          version=$(sed -n 's/^project(strata VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
+          stage=stage-dsv41
+          rm -rf "$stage" out release
+          mkdir -p "$stage"
+          cp build-p40/strata-dsv41 "$stage/"
+          printf '{"version": "%s", "source": "p40-cuda12.yml (CUDA 12.9, STRATA_EXPERIMENTAL_SM60=ON)", "archs": "61", "cuda": "12.9", "portable": true}\n' \
+            "$version" > "$stage/BUILD.json"
+          python3 packaging/collect_libs.py --binary "$stage/strata-dsv41" --search "$CUDA_HOME/lib64" \
+            --out "$stage" --also 'libcublasLt.so*'
+          python3 packaging/package_engine.py --src "$stage" --backend cuda --version "$version" --out out \
+            --arch sm_61 --arch compute_61 --min-driver nvidia=575.51 --variant cuda12 \
+            --platform linux-x86_64 --build-id "${GITHUB_SHA::9}-cuda12.9-sm61" \
+            --entrypoint strata-dsv41 --include SYSTEM-LIBS.txt --require-dsv41
+          python3 packaging/feed_tool.py pack-engine "out/${version}-linux-x86_64-cuda-cuda12" \
+            --out release --prefix strata-dsv41
+
+      - name: Verify the package
+        run: |
+          set -eux
+          version=$(sed -n 's/^project(strata VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt | head -1)
+          pkg="out/${version}-linux-x86_64-cuda-cuda12"
+          python3 packaging/package_engine.py --verify "$pkg"
+          python3 packaging/binary_deps.py "$pkg"
+          # RUNPATH $ORIGIN: it must start with no LD_LIBRARY_PATH and find its own cudart/cublas
+          env -u LD_LIBRARY_PATH "$pkg/strata-dsv41" --version
+          sha256sum release/*.tar.gz | tee -a "$GITHUB_STEP_SUMMARY"
+          cat release/*.entry.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: strata-dsv41-cuda12-sm61
+          path: |
+            release/*.tar.gz
+            release/*.entry.json
+          if-no-files-found: error
+          retention-days: 14

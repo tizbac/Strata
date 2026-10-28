@@ -814,6 +814,8 @@ __global__ void __launch_bounds__(kThreads) set_kernel(const SetArgs a) {
 
 #if !defined(STRATA_USE_HIP)
 // the same on the tensor cores (sm_70+): 8 warps each 16 rows x 32 outputs, the tiles F16 in shared memory
+// Pascal (sm_61) has no WMMA (nvcuda::wmma is declared for sm_70+ only): build an empty stub there, tc_ok() is false
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 700
 namespace wm = nvcuda::wmma;
 constexpr int kLdT = 40;
 template <int T, bool GATE_UP>
@@ -898,6 +900,10 @@ __global__ void __launch_bounds__(kThreads) set_tc_kernel(const SetArgs a) {
         else a.y[lr * a.ldo + c0 + c] = O.g[r][c];
     }
 }
+#else
+template <int T, bool GATE_UP>
+__global__ void __launch_bounds__(kThreads) set_tc_kernel(const SetArgs) {}   // sm_61: never launched (tc_ok() is false)
+#endif
 #endif
 
 // ---------------------------------------------------------------- GEMVs

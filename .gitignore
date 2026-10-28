@@ -95,3 +95,10 @@ node_modules/
 /build-spark/
 /build-vision-spark/
 /.venv-build/
+
+# this fork: the local CUDA 12.9 toolkit (pip/redist archives) and the Tesla P40 package output
+/.cuda12/
+/.cuda12-dl/
+/.cuda12-wheels/
+/out-dsv41-*/
+/stage-dsv41/

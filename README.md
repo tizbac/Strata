@@ -24,6 +24,22 @@
 
 **Free, open source, and yours to run.** Use Strata on your desktop or with your favorite coding tools. No account needed.
 
+> ### This fork: Tesla P40 (sm_61) + CUDA 12
+>
+> [`tizbac/Strata`](https://github.com/tizbac/Strata) builds the **DeepSeek-V4.1 engine (`strata-dsv41`) for Pascal
+> compute capability 6.1** — Tesla P40, Tesla P4 and GTX 10 series — with **CUDA 12.9**. Upstream's ready-made
+> DeepSeek packages carry no Pascal code, and `src/dsv41` needs two compile-time guards because `nvcuda::wmma`
+> exists only from sm_70 up. The guards change nothing for sm_70+ builds.
+>
+> * Build, package and run: **[docs/P40_CUDA12.md](docs/P40_CUDA12.md)**
+> * Ready-to-run archive: `strata-dsv41-0.1.53-linux-x86_64-cuda-cuda12.tar.gz` (sm_61 SASS + compute_61 PTX),
+>   produced with `packaging/build_dsv41_cuda.sh`'s flags plus `-DSTRATA_EXPERIMENTAL_SM60=ON`.
+> * CI: [`.github/workflows/p40-cuda12.yml`](.github/workflows/p40-cuda12.yml) builds, packages and verifies the
+>   archive on every change to `src/dsv41`.
+>
+> Built and library-checked; **not yet run on P40 hardware** by this fork's author. DeepSeek needs the model files
+> on an SSD (239-274 GB) and pictures need `--vision off` on Pascal (no BF16 GEMM in cuBLAS there).
+
 ## Models
 
 We recommend **ISTA-DASLab first**, then **Unsloth** and other providers, where a compatible model fits.

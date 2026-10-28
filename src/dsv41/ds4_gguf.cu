@@ -785,6 +785,10 @@ __global__ void __launch_bounds__(kThreads) mx_set_kernel(const SetK a) {
 // the same on the tensor cores: a block BM rows x BN outputs, 8 warps each 16 rows x 32 outputs (2 fragments, gate and
 // up: 4), a 32-value MXFP4 block of K a step (2 WMMA k-steps), the tiles in shared memory as F16
 #if !defined(STRATA_USE_HIP)
+// Pascal (sm_61, Tesla P40) has no WMMA: nvcuda::wmma is declared for sm_70+ only.  tc_ok() already keeps this kernel
+// off every card below sm_70; build it as an empty stub for those passes so a CUDA 12 sm_61 build links (the scalar
+// mx_set_kernel above is what runs there).  CUDA 13 dropped Pascal, so upstream never needed this guard.
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 700
 namespace wm = nvcuda::wmma;
 constexpr int kLdT = 40;   // halves a tile row (32 + 8: WMMA wants a multiple of 8; the pad spreads the banks)
 template <bool GATE_UP>
@@ -876,6 +880,10 @@ __global__ void __launch_bounds__(kThreads) mx_set_tc_kernel(const SetK a) {
         else a.y[lr * a.ldo + c0 + c] = O.g[r][c];
     }
 }
+#else
+template <bool GATE_UP>
+__global__ void __launch_bounds__(kThreads) mx_set_tc_kernel(const SetK) {}   // sm_61: never launched (tc_ok() is false)
+#endif
 #endif
 #if defined(STRATA_USE_HIP)
 // the same on an AMD wave32 GPU's WMMA (RDNA3 / RDNA3.5 gfx11, RDNA4 gfx12): 8 waves each 16 rows x 32 outputs, the
