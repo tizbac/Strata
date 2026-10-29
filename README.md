@@ -32,8 +32,9 @@
 > exists only from sm_70 up. The guards change nothing for sm_70+ builds.
 >
 > * Build, package and run: **[docs/P40_CUDA12.md](docs/P40_CUDA12.md)**
-> * Ready-to-run archive: `strata-dsv41-0.1.53-linux-x86_64-cuda-cuda12.tar.gz` (sm_61 SASS + compute_61 PTX),
->   produced with `packaging/build_dsv41_cuda.sh`'s flags plus `-DSTRATA_EXPERIMENTAL_SM60=ON`.
+> * Archive: `strata-dsv41-0.1.53-linux-x86_64-cuda-cuda12.tar.gz` (sm_61 SASS + compute_61 PTX), built with the
+>   `packaging/build_dsv41_cuda.sh` flags plus `-DSTRATA_EXPERIMENTAL_SM60=ON`; the doc has the exact commands and
+>   the CI workflow that reproduces it.
 > * CI: [`.github/workflows/p40-cuda12.yml`](.github/workflows/p40-cuda12.yml) builds, packages and verifies the
 >   archive on every change to `src/dsv41`.
 >
