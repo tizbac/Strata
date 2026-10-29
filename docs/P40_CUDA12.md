@@ -129,6 +129,15 @@ On a P40:
 | GPU driver | NVIDIA 575.51 or newer (CUDA 12.9); the driver's own `libcuda.so.1` is not bundled |
 | CUDA runtime | bundled (`libcudart.so.12`, `libcublas.so.12`, `libcublasLt.so.12`) |
 
+### Building on a distribution with glibc 2.41 (Debian 13)
+
+CUDA 12.9's `crt/math_functions.h` declares `sinpi`, `cospi`, `sinpif` and `cospif` without an exception
+specification, and glibc 2.41 declares the same functions `noexcept`, so nvcc stops with
+"exception specification is incompatible with that of previous function". This is a toolkit-header clash, not a
+Strata problem. Two ways past it: add `noexcept (true)` to those four declarations in the toolkit's
+`math_functions.h`, or build with CUDA 12.8 (see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)). The CI workflow uses
+Ubuntu 22.04 (glibc 2.35), where the stock headers are fine.
+
 ## What is not verified
 
 The engine compiles for sm_61, starts, loads its bundled libraries, and passes `package_engine.py --verify` and
